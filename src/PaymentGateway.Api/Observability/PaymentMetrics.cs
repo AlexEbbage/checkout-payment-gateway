@@ -6,83 +6,86 @@ namespace PaymentGateway.Api.Observability;
 
 public sealed class PaymentMetrics
 {
-    private readonly Meter _meter;
+    public const string MeterName = "PaymentGateway.Api.Payments";
 
-    private readonly Counter<long> _authorizedPayments;
-    private readonly Counter<long> _declinedPayments;
-    private readonly Counter<long> _rejectedPayments;
-    private readonly Counter<long> _bankUnavailablePayments;
-    private readonly Counter<long> _idempotencyReplays;
-    private readonly Counter<long> _idempotencyConflicts;
-    private readonly Counter<long> _idempotencyInProgress;
+    private static readonly Meter Meter = new(MeterName, "1.0.0");
 
-    private readonly Histogram<double> _paymentProcessingDurationMs;
-    private readonly Histogram<double> _bankRequestDurationMs;
+    private static readonly Counter<long> PaymentsProcessed =
+        Meter.CreateCounter<long>(
+            name: "payments.processed",
+            unit: "{payment}",
+            description: "Number of payment requests processed by the gateway.");
 
-    public PaymentMetrics()
+    private static readonly Counter<long> PaymentsRejected =
+        Meter.CreateCounter<long>(
+            name: "payments.rejected",
+            unit: "{payment}",
+            description: "Number of payment requests rejected before reaching the acquiring bank.");
+
+    private static readonly Counter<long> PaymentsFailed =
+        Meter.CreateCounter<long>(
+            name: "payments.failed",
+            unit: "{payment}",
+            description: "Number of payment requests that failed due to dependency or infrastructure errors.");
+
+    private static readonly Counter<long> IdempotencyRequests =
+        Meter.CreateCounter<long>(
+            name: "payments.idempotency.requests",
+            unit: "{request}",
+            description: "Number of idempotency outcomes observed by the gateway.");
+
+    private static readonly Histogram<double> PaymentProcessingDuration =
+        Meter.CreateHistogram<double>(
+            name: "payments.processing.duration",
+            unit: "ms",
+            description: "Duration of payment processing inside the gateway.");
+
+    private static readonly Histogram<double> BankRequestDuration =
+        Meter.CreateHistogram<double>(
+            name: "payments.bank_request.duration",
+            unit: "ms",
+            description: "Duration of acquiring bank payment requests.");
+
+    public void RecordPaymentProcessed(PaymentStatus status, string currency)
     {
-        _meter = new Meter("PaymentGateway.Api.Payments", "1.0.0");
-
-        _authorizedPayments = _meter.CreateCounter<long>("payments.authorized.count");
-        _declinedPayments = _meter.CreateCounter<long>("payments.declined.count");
-        _rejectedPayments = _meter.CreateCounter<long>("payments.rejected.count");
-        _bankUnavailablePayments = _meter.CreateCounter<long>("payments.bank_unavailable.count");
-        _idempotencyReplays = _meter.CreateCounter<long>("payments.idempotency.replay.count");
-        _idempotencyConflicts = _meter.CreateCounter<long>("payments.idempotency.conflict.count");
-        _idempotencyInProgress = _meter.CreateCounter<long>("payments.idempotency.in_progress.count");
-
-        _paymentProcessingDurationMs = _meter.CreateHistogram<double>("payments.processing.duration_ms");
-        _bankRequestDurationMs = _meter.CreateHistogram<double>("payments.bank_request.duration_ms");
+        PaymentsProcessed.Add(
+            1,
+            new KeyValuePair<string, object?>("status", status.ToString().ToLowerInvariant()),
+            new KeyValuePair<string, object?>("currency", currency.ToUpperInvariant()));
     }
 
-    public void RecordPaymentProcessed(PaymentStatus status)
+    public void RecordPaymentRejected(string reason)
     {
-        if (status == PaymentStatus.Authorized)
-        {
-            _authorizedPayments.Add(1);
-            return;
-        }
-
-        if (status == PaymentStatus.Declined)
-        {
-            _declinedPayments.Add(1);
-        }
+        PaymentsRejected.Add(
+            1,
+            new KeyValuePair<string, object?>("reason", reason));
     }
 
-    public void RecordPaymentRejected()
+    public void RecordPaymentFailed(string reason)
     {
-        _rejectedPayments.Add(1);
+        PaymentsFailed.Add(
+            1,
+            new KeyValuePair<string, object?>("reason", reason));
     }
 
-    public void RecordBankUnavailable()
+    public void RecordIdempotencyOutcome(string outcome)
     {
-        _bankUnavailablePayments.Add(1);
+        IdempotencyRequests.Add(
+            1,
+            new KeyValuePair<string, object?>("outcome", outcome));
     }
 
-    public void RecordIdempotencyReplay()
+    public void RecordPaymentProcessingDuration(double durationMs, string outcome)
     {
-        _idempotencyReplays.Add(1);
-    }
-
-    public void RecordIdempotencyConflict()
-    {
-        _idempotencyConflicts.Add(1);
-    }
-
-    public void RecordIdempotencyInProgress()
-    {
-        _idempotencyInProgress.Add(1);
-    }
-
-    public void RecordPaymentProcessingDuration(double durationMs)
-    {
-        _paymentProcessingDurationMs.Record(durationMs);
+        PaymentProcessingDuration.Record(
+            durationMs,
+            new KeyValuePair<string, object?>("outcome", outcome));
     }
 
     public void RecordBankRequestDuration(double durationMs, BankPaymentStatus status)
     {
-        _bankRequestDurationMs.Record(
+        BankRequestDuration.Record(
             durationMs,
-            new KeyValuePair<string, object?>("bank_payment_status", status.ToString()));
+            new KeyValuePair<string, object?>("status", status.ToString().ToLowerInvariant()));
     }
 }

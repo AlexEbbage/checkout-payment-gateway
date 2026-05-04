@@ -47,6 +47,7 @@ public sealed class PaymentService : IPaymentService
             ActivityKind.Internal);
 
         var stopwatch = Stopwatch.StartNew();
+        var processingOutcome = "unknown";
 
         try
         {
@@ -54,7 +55,8 @@ public sealed class PaymentService : IPaymentService
 
             if (validationErrors.Count > 0)
             {
-                _metrics.RecordPaymentRejected();
+                _metrics.RecordPaymentRejected("validation");
+                processingOutcome = "rejected";
 
                 _logger.LogInformation(
                     "Payment request rejected with {ValidationErrorCount} validation errors",
@@ -86,7 +88,8 @@ public sealed class PaymentService : IPaymentService
                         break;
 
                     case IdempotencyStartOutcome.CompletedSamePayload:
-                        _metrics.RecordIdempotencyReplay();
+                        _metrics.RecordIdempotencyOutcome("replay");
+                        processingOutcome = "idempotency_replay";
 
                         _logger.LogInformation(
                             "Returning completed idempotent response for idempotency key hash {IdempotencyKeyHash}",
@@ -95,7 +98,8 @@ public sealed class PaymentService : IPaymentService
                         return idempotencyStart.ExistingResult!;
 
                     case IdempotencyStartOutcome.InProgressSamePayload:
-                        _metrics.RecordIdempotencyInProgress();
+                        _metrics.RecordIdempotencyOutcome("in_progress");
+                        processingOutcome = "idempotency_in_progress";
 
                         _logger.LogWarning(
                             "Idempotent request already in progress for idempotency key hash {IdempotencyKeyHash}",
@@ -104,7 +108,8 @@ public sealed class PaymentService : IPaymentService
                         return PaymentProcessingResult.IdempotencyInProgress();
 
                     case IdempotencyStartOutcome.ConflictDifferentPayload:
-                        _metrics.RecordIdempotencyConflict();
+                        _metrics.RecordIdempotencyOutcome("conflict");
+                        processingOutcome = "idempotency_conflict";
 
                         _logger.LogWarning(
                             "Idempotency conflict for idempotency key hash {IdempotencyKeyHash}",
@@ -128,7 +133,8 @@ public sealed class PaymentService : IPaymentService
             {
                 var unavailableResult = PaymentProcessingResult.BankUnavailable();
 
-                _metrics.RecordBankUnavailable();
+                _metrics.RecordPaymentFailed("bank_unavailable");
+                processingOutcome = "bank_unavailable";
 
                 if (shouldCompleteIdempotencyRecord)
                 {
@@ -174,7 +180,8 @@ public sealed class PaymentService : IPaymentService
                     cancellationToken);
             }
 
-            _metrics.RecordPaymentProcessed(payment.Status);
+            _metrics.RecordPaymentProcessed(payment.Status, payment.Currency);
+            processingOutcome = "succeeded";
 
             _logger.LogInformation(
                 "Payment {PaymentId} processed with status {PaymentStatus}",
@@ -189,7 +196,7 @@ public sealed class PaymentService : IPaymentService
         finally
         {
             stopwatch.Stop();
-            _metrics.RecordPaymentProcessingDuration(stopwatch.Elapsed.TotalMilliseconds);
+            _metrics.RecordPaymentProcessingDuration(stopwatch.Elapsed.TotalMilliseconds, processingOutcome);
         }
     }
 
