@@ -10,7 +10,7 @@ namespace PaymentGateway.Api.Controllers;
 [Route("api/payments")]
 public sealed class PaymentsController : ControllerBase
 {
-    private const string IdempotencyKeyHeaderName = "Idempotency-Key";
+    private const int Status425TooEarly = 425;
 
     private readonly IPaymentService _paymentService;
 
@@ -23,14 +23,13 @@ public sealed class PaymentsController : ControllerBase
     [ProducesResponseType(typeof(ProcessPaymentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(typeof(ProblemDetails), 425)]
+    [ProducesResponseType(typeof(ProblemDetails), Status425TooEarly)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> ProcessPayment(
         [FromBody] ProcessPaymentRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken cancellationToken)
     {
-        var idempotencyKey = Request.Headers[IdempotencyKeyHeaderName].FirstOrDefault();
-
         var result = await _paymentService.ProcessPaymentAsync(
             request,
             idempotencyKey,
@@ -53,7 +52,7 @@ public sealed class PaymentsController : ControllerBase
             PaymentProcessingOutcome.IdempotencyInProgress => Problem(
                 title: "Idempotent request already in progress",
                 detail: result.ErrorMessage,
-                statusCode: 425),
+                statusCode: Status425TooEarly),
 
             PaymentProcessingOutcome.BankUnavailable => Problem(
                 title: "Payment processing temporarily unavailable",
