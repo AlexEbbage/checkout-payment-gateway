@@ -105,14 +105,14 @@ Returns the stored payment summary. The full card number and CVV are never retur
 
 Requests are validated before the acquiring bank is called.
 
-| Field | Rule |
-|---|---|
-| Card number | Required, numeric, 14-19 digits |
-| Expiry month | Required, 1-12 |
-| Expiry date | Must be in the future |
-| Currency | Required, supported 3-letter currency code |
-| Amount | Positive integer in minor units |
-| CVV | Required, numeric, 3-4 digits |
+| Field        | Rule                                       |
+| ------------ | ------------------------------------------ |
+| Card number  | Required, numeric, 14-19 digits            |
+| Expiry month | Required, 1-12                             |
+| Expiry date  | Must be in the future                      |
+| Currency     | Required, supported 3-letter currency code |
+| Amount       | Positive integer in minor units            |
+| CVV          | Required, numeric, 3-4 digits              |
 
 Supported currencies are `GBP`, `USD`, and `EUR`.
 
@@ -122,11 +122,11 @@ Invalid requests return `400 Bad Request` and are not sent to the bank simulator
 
 The supplied simulator responds based on the last card digit:
 
-| Last digit | Result |
-|---|---|
-| Odd | Authorized |
-| Even | Declined |
-| 0 | 503 Service Unavailable |
+| Last digit | Result                  |
+| ---------- | ----------------------- |
+| Odd        | Authorized              |
+| Even       | Declined                |
+| 0          | 503 Service Unavailable |
 
 A decline is treated as a valid bank response and is stored. A `503`, timeout, or unexpected bank response is treated as an upstream dependency failure.
 
@@ -188,7 +188,9 @@ The metrics and traces are instrumented in code without binding the application 
 
 ## Testing
 
-The tests cover the main behaviours:
+The test suite focuses on the behaviours that matter most for this flow.
+
+The default `dotnet test` run includes:
 
 - validation rules
 - invalid requests not calling the bank
@@ -196,11 +198,23 @@ The tests cover the main behaviours:
 - payment persistence and retrieval
 - bank unavailable handling
 - bank client response mapping
+- bank request/response contract serialization
 - idempotency replay
 - idempotency conflicts
 - concurrent idempotency reservation
+- API status-code mapping through `WebApplicationFactory`
+- correlation ID behaviour
+- checks that responses do not expose full card number or CVV
 
-The tests are mostly unit-level and deterministic. For a production service I would add API integration tests using `WebApplicationFactory`, contract tests for the bank integration, and a small smoke test against the Docker simulator.
+There are also optional smoke tests that can run against the real API and the Docker bank simulator. These are not required for the normal test run because they depend on external processes being started.
+
+To run the smoke tests:
+
+```bash
+docker-compose up
+dotnet run --project src/PaymentGateway.Api
+PAYMENT_GATEWAY_E2E_BASE_URL=https://localhost:5001 dotnet test --filter Category=E2E
+```
 
 ## Design trade-offs
 
